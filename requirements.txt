@@ -1,0 +1,5 @@
+streamlit
+audio-recorder-streamlit
+google-cloud-speech
+google-cloud-translate
+python-dotenv
