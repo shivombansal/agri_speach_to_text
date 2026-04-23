@@ -33,7 +33,7 @@ def _get_project_id() -> str:
 
 PROJECT_ID = _get_project_id()
 REGION     = "us-central1"
-LANGUAGE   = "ta-IN"   # Tamil — change to "bn-IN" or "kn-IN" to test others
+LANGUAGE   = "te-IN"   # Telugu — change to "ta-IN", "bn-IN", "kn-IN" etc.
 MODEL      = "chirp_2"
 
 CONFIDENCE_THRESHOLDS = {
@@ -82,7 +82,7 @@ def transcribe_audio(audio_bytes: bytes) -> dict:
     }
 
 
-def translate_to_english(text: str, source_lang: str = "ta") -> str:
+def translate_to_english(text: str, source_lang: str = "te") -> str:
     """Translate text using Google Cloud Translation Basic (v2) API."""
     client = translate_v2.Client()
     result = client.translate(text, source_language=source_lang, target_language="en")
@@ -138,7 +138,7 @@ st.markdown(
     """
     <h1 style='text-align:center; margin-bottom:0'>🌾 Voice Field Notes</h1>
     <p style='text-align:center; color:grey; margin-top:4px'>
-        POC · Tamil (தமிழ்) → English · Google Chirp 2 + Translate
+        POC · Telugu (తెలుగు) Speach to English Transcription
     </p>
     """,
     unsafe_allow_html=True,
@@ -153,7 +153,7 @@ if not check_env():
 st.subheader("Step 1 — Record your note")
 st.caption(
     "Click the mic button to **start** recording. Click again to **stop**. "
-    "Speak in Tamil. Max 60 seconds."
+    "Speak in Telugu. Max 60 seconds."
 )
 
 audio_bytes = audio_recorder(
@@ -167,7 +167,7 @@ audio_bytes = audio_recorder(
 )
 
 if not audio_bytes:
-    st.info("👆 Press the microphone button above and speak your field note in Tamil.")
+    st.info("👆 Press the microphone button above and speak your field note in Telugu.")
     st.stop()
 
 st.audio(audio_bytes, format="audio/wav")
@@ -237,13 +237,13 @@ elif alert_type == "warning":
 else:
     st.error(f"{emoji} {label}")
 
-st.markdown("#### 📝 Tamil Transcript")
+st.markdown("#### 📝 Telugu Transcript")
 st.text_area(
-    label="tamil",
+    label="telugu",
     value=stt_result["transcript"],
     height=110,
     label_visibility="collapsed",
-    key="tamil_out",
+    key="telugu_out",
 )
 
 st.markdown("#### 🌐 English Translation")
@@ -289,7 +289,3 @@ with st.expander("🔧 Debug info"):
     )
 
 st.divider()
-st.caption(
-    "POC only · Google Cloud STT V2 Chirp 2 (us-central1) + Cloud Translation v2 · "
-    "No audio stored"
-)
