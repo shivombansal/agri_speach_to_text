@@ -460,6 +460,5 @@ with tab_submissions:
 
 st.divider()
 st.caption(
-    "POC only · Google Cloud STT V2 Chirp 2 (us-central1) + Cloud Translation v2 · "
-    "No audio stored · Results logged to Google Sheets"
+    "POC only · No audio stored · Results logged to Google Sheets"
 )
