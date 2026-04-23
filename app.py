@@ -49,9 +49,11 @@ REGION      = "us-central1"
 LANGUAGE    = "te-IN"       # Telugu
 MODEL       = "chirp_2"
 
-# Paste your Google Sheet ID here (the long string in the sheet URL):
-# https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit
-SHEET_ID    = st.secrets.get("SHEET_ID", os.environ.get("SHEET_ID", ""))
+SHEET_ID = ""
+try:
+    SHEET_ID = st.secrets["SHEET_ID"]
+except (KeyError, AttributeError):
+    SHEET_ID = os.environ.get("SHEET_ID", "")
 
 SHEET_HEADERS = [
     "timestamp", "tester_name", "language_code", "model", "region",
@@ -81,8 +83,8 @@ def _get_sheet():
     sh    = gc.open_by_key(SHEET_ID)
     ws    = sh.sheet1
 
-    # Write header row if the sheet is empty
-    if ws.row_count == 0 or ws.cell(1, 1).value != "timestamp":
+    # Write header row if A1 is empty or doesn't match expected header
+    if ws.cell(1, 1).value != "timestamp":
         ws.insert_row(SHEET_HEADERS, index=1)
 
     return ws
@@ -135,7 +137,12 @@ def transcribe_audio(audio_bytes: bytes) -> dict:
 
 
 def translate_to_english(text: str, source_lang: str = "te") -> str:
-    client = translate_v2.Client()
+    # Pass credentials explicitly for reliability
+    creds = Credentials.from_service_account_info(
+        GCP_CREDS_DICT,
+        scopes=["https://www.googleapis.com/auth/cloud-translation"],
+    )
+    client = translate_v2.Client(credentials=creds)
     result = client.translate(text, source_language=source_lang, target_language="en")
     return result["translatedText"]
 
@@ -175,38 +182,12 @@ def check_env() -> bool:
     return ok
 
 
-# ── Page layout ───────────────────────────────────────────────────────────────
+# ── Tab content functions ─────────────────────────────────────────────────────
+# NOTE: All st.stop() calls have been replaced with early `return` inside these
+# functions. This is critical — calling st.stop() inside a tab block stops ALL
+# rendering in the app, including the other tabs.
 
-st.set_page_config(
-    page_title="Voice Field Notes — POC",
-    page_icon="🌾",
-    layout="centered",
-)
-
-st.markdown(
-    """
-    <h1 style='text-align:center; margin-bottom:0'>🌾 Voice Field Notes</h1>
-    <p style='text-align:center; color:grey; margin-top:4px'>
-        POC · Telugu (తెలుగు) Speech to English Transcription
-    </p>
-    """,
-    unsafe_allow_html=True,
-)
-st.divider()
-
-if not check_env():
-    st.stop()
-
-# ── Tabs ──────────────────────────────────────────────────────────────────────
-
-tab_record, tab_submissions = st.tabs(["🎙️ Record & Review", "📊 Submissions"])
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TAB 1 — Record & Review
-# ═════════════════════════════════════════════════════════════════════════════
-
-with tab_record:
-
+def render_record_tab():
     # Tester name — required before anything else
     tester_name = st.text_input(
         "Your name",
@@ -215,7 +196,7 @@ with tab_record:
     )
     if not tester_name.strip():
         st.info("👆 Please enter your name above to get started.")
-        st.stop()
+        return  # ← was st.stop()
 
     st.subheader("Step 1 — Record your note")
     st.caption(
@@ -235,7 +216,7 @@ with tab_record:
 
     if not audio_bytes:
         st.info("👆 Press the microphone button above and speak your field note in Telugu.")
-        st.stop()
+        return  # ← was st.stop()
 
     st.audio(audio_bytes, format="audio/wav")
     st.caption(f"Audio captured — {len(audio_bytes) / 1024:.1f} KB")
@@ -243,7 +224,7 @@ with tab_record:
     MIN_BYTES = 8_000
     if len(audio_bytes) < MIN_BYTES:
         st.warning("Recording is too short. Please hold the button for at least 1 second and try again.")
-        st.stop()
+        return  # ← was st.stop()
 
     # ── Processing ────────────────────────────────────────────────────────────
 
@@ -260,7 +241,7 @@ with tab_record:
             st.error(f"STT failed: {exc}")
             with st.expander("Full traceback"):
                 st.exception(exc)
-            st.stop()
+            return  # ← was st.stop()
         stt_elapsed = time.perf_counter() - stt_start
 
     if not stt_result["transcript"]:
@@ -268,7 +249,7 @@ with tab_record:
             "Google could not detect any speech in this recording.\n\n"
             "Try again in a quieter environment, or speak closer to the microphone."
         )
-        st.stop()
+        return  # ← was st.stop()
 
     with st.spinner("Translating to English..."):
         nmt_start = time.perf_counter()
@@ -278,7 +259,7 @@ with tab_record:
             st.error(f"Translation failed: {exc}")
             with st.expander("Full traceback"):
                 st.exception(exc)
-            st.stop()
+            return  # ← was st.stop()
         nmt_elapsed = time.perf_counter() - nmt_start
 
     total_elapsed = time.perf_counter() - overall_start
@@ -413,17 +394,18 @@ with tab_record:
             }
         )
 
-# ═════════════════════════════════════════════════════════════════════════════
-# TAB 2 — Submissions
-# ═════════════════════════════════════════════════════════════════════════════
 
-with tab_submissions:
+def render_submissions_tab():
     st.subheader("All submissions")
     st.caption("Live view of the shared Google Sheet. Click Refresh to see new entries.")
 
     if st.button("🔄 Refresh", key="refresh_submissions"):
         st.cache_resource.clear()
         st.rerun()
+
+    if not SHEET_ID:
+        st.warning("SHEET_ID is not configured — cannot load submissions.")
+        return
 
     try:
         with st.spinner("Loading submissions..."):
@@ -442,6 +424,39 @@ with tab_submissions:
         st.error(f"Could not load submissions: {exc}")
         with st.expander("Full traceback"):
             st.exception(exc)
+
+
+# ── Page layout ───────────────────────────────────────────────────────────────
+
+st.set_page_config(
+    page_title="Voice Field Notes — POC",
+    page_icon="🌾",
+    layout="centered",
+)
+
+st.markdown(
+    """
+    <h1 style='text-align:center; margin-bottom:0'>🌾 Voice Field Notes</h1>
+    <p style='text-align:center; color:grey; margin-top:4px'>
+        POC · Telugu (తెలుగు) Speech to English Transcription
+    </p>
+    """,
+    unsafe_allow_html=True,
+)
+st.divider()
+
+if not check_env():
+    st.stop()  # Safe here — we're at the top level, not inside a tab
+
+# ── Tabs ──────────────────────────────────────────────────────────────────────
+
+tab_record, tab_submissions = st.tabs(["🎙️ Record & Review", "📊 Submissions"])
+
+with tab_record:
+    render_record_tab()
+
+with tab_submissions:
+    render_submissions_tab()
 
 st.divider()
 st.caption(
