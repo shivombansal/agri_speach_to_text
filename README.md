@@ -1,17 +1,19 @@
 # 🌾 Voice Field Notes — POC
 
-> Tamil speech → English text, built for field agents with low digital literacy.  
-> Google Cloud STT Chirp 2 · Cloud Translation v2 · Streamlit
+> Telugu speech → English text, built for field agents with low digital literacy.  
+> Google Cloud STT Chirp 2 · Cloud Translation v2 · Google Sheets · Streamlit
 
 ---
 
 ## What this does
 
-A field agent presses a mic button, speaks a farm observation in Tamil, and gets back:
+A field agent presses a mic button, speaks a farm observation in Telugu, and gets back:
 
-- A Tamil transcript with punctuation
+- A Telugu transcript with punctuation
 - An English translation
 - A confidence score to flag uncertain recordings
+- A feedback form to rate accuracy
+- All results logged to a shared Google Sheet for analysis
 
 No typing. No keyboard. No English required.
 
@@ -27,17 +29,22 @@ Streamlit (Python)
 Google STT V2              Google Translate v2
 Chirp 2 · us-central1     Basic (REST)
      ↓                          ↓
-Tamil transcript  +  English translation  →  UI review screen
+Telugu transcript  +  English translation  →  UI review screen
+                                                     ↓
+                                            Tester rates accuracy
+                                                     ↓
+                                            Google Sheets (log)
 ```
 
 ---
 
 ## Supported languages
 
-Change the `LANGUAGE` constant in `app.py` line ~20:
+Change the `LANGUAGE` constant in `app.py` (~line 20):
 
 | Language | Code    |
 |----------|---------|
+| Telugu   | `te-IN` |
 | Tamil    | `ta-IN` |
 | Bengali  | `bn-IN` |
 | Kannada  | `kn-IN` |
@@ -72,7 +79,7 @@ pip install -r requirements.txt
 
 ### 2. GCP prerequisites
 
-Enable both APIs in your GCP project:
+Enable these APIs in your GCP project:
 
 - [Cloud Speech-to-Text API](https://console.cloud.google.com/apis/library/speech.googleapis.com)
 - [Cloud Translation API](https://console.cloud.google.com/apis/library/translate.googleapis.com)
@@ -83,16 +90,26 @@ Create a service account with these roles:
 
 Download the JSON key file.
 
-### 3. Set environment variables
+### 3. Google Sheet setup
+
+1. Create a new Google Sheet
+2. Copy the Sheet ID from the URL:  
+   `https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit`
+3. Share the sheet with your service account's `client_email` (Editor access)
+
+The app writes the header row automatically on first run.
+
+### 4. Set environment variables
 
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/your-key.json
 export GOOGLE_CLOUD_PROJECT=your-project-id
+export SHEET_ID=your-google-sheet-id
 ```
 
 Add to `~/.zshrc` or `~/.bashrc` to persist across sessions.
 
-### 4. Run
+### 5. Run
 
 ```bash
 streamlit run app.py
@@ -106,11 +123,13 @@ Opens at http://localhost:8501
 
 No credentials go into Git. Everything lives in Streamlit's Secrets Manager.
 
-### 1. Convert your JSON key to TOML
+### 1. Add secrets
 
 In **Streamlit Cloud → your app → Settings → Secrets**, paste:
 
 ```toml
+SHEET_ID = "your-google-sheet-id"
+
 [gcp_service_account]
 type = "service_account"
 project_id = "your-project-id"
@@ -130,7 +149,7 @@ Copy every field from your JSON key exactly. The `private_key` newlines must sta
 GitHub (no secrets) → Streamlit Cloud → connect repo → paste secrets → Deploy
 ```
 
-The app detects whether it's running locally (reads from env var) or on Streamlit Cloud (reads from secrets) automatically — no code changes needed.
+The app detects whether it's running locally (reads from env vars) or on Streamlit Cloud (reads from secrets) automatically — no code changes needed.
 
 ---
 
@@ -151,6 +170,7 @@ streamlit
 audio-recorder-streamlit
 google-cloud-speech
 google-cloud-translate
+gspread
 python-dotenv
 ```
 
@@ -165,22 +185,45 @@ __pycache__/
 
 ---
 
+## Google Sheet columns
+
+Every saved submission writes one row with these columns:
+
+| Column                | Description                              |
+|-----------------------|------------------------------------------|
+| `timestamp`           | UTC time of submission                   |
+| `tester_name`         | Name entered by the field tester         |
+| `language_code`       | e.g. `te-IN`                             |
+| `model`               | e.g. `chirp_2`                           |
+| `region`              | GCP region used for STT                  |
+| `audio_kb`            | Size of the recorded audio               |
+| `confidence`          | STT confidence score (0–1)               |
+| `stt_ms`              | Speech-to-text latency in ms             |
+| `nmt_ms`              | Translation latency in ms                |
+| `total_ms`            | End-to-end latency in ms                 |
+| `telugu_transcript`   | Raw Telugu text from Chirp 2             |
+| `english_translation` | English output from Cloud Translation    |
+| `feedback`            | Tester rating (Correct / Partial / Wrong)|
+| `remarks`             | Free-text notes from tester              |
+
+---
+
 ## Test plan
 
 Run 20 clips across three types before signing off on the POC:
 
 **Type A — Simple observations**
-> "இன்று பருத்தி நன்றாக வளர்கிறது"
-> *(Today the cotton is growing well)*
+> "ఈరోజు పత్తి పంట బాగా పెరుగుతోంది"  
+> *(Today the cotton crop is growing well)*
 
 **Type B — Agricultural vocabulary**
-> "இரண்டு ஏக்கரில் DAP உரம் 50 கிலோ போட்டோம்"
+> "రెండు ఎకరాలకు DAP ఎరువు 50 కిలోలు వేశాం"  
 > *(Applied 50 kg DAP fertiliser on 2 acres)*
 
-**Type C — Noisy / natural speech**
+**Type C — Noisy / natural speech**  
 Speak with background noise, filler words, mid-sentence pauses.
 
-Log for each clip: transcript accuracy · confidence score · round-trip time.
+Log for each clip: transcript accuracy · confidence score · round-trip time · tester feedback.
 
 ---
 
@@ -188,7 +231,6 @@ Log for each clip: transcript accuracy · confidence score · round-trip time.
 
 | Limitation | Phase 1 fix |
 |---|---|
-| No database write (Save shows a toast only) | Connect to Postgres / Firestore |
 | No multi-tenant auth | Add Google / OTP login |
 | Language hardcoded in source | Move to per-user profile setting |
 | No fallback if Google APIs fail | Add retry + offline queue |
